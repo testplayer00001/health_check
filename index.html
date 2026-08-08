@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>熱中症管理シート</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #F5F5F2;
+    --panel: #FFFFFF;
+    --ink: #22282A;
+    --ink-soft: #767F7C;
+    --line: #E2E1DA;
+    --accent: #D9682E;
+    --safe: #2E8B6E;
+    --alert: #C64B3C;
+    --radius: 12px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Noto Sans JP', sans-serif;
+    min-height: 100vh;
+    display:flex;
+    justify-content:center;
+    padding: 24px 16px 60px;
+  }
+  .app{ width:100%; max-width: 480px; }
+  .brand{
+    display:flex; align-items:center; gap:10px; margin-bottom:16px; padding: 0 2px;
+  }
+  .brand h1{
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    font-weight:700;
+    font-size: 18px;
+    letter-spacing: 0.01em;
+    margin:0;
+  }
+  .brand p{ display:none; }
+
+  .card{
+    background: var(--panel);
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    padding: 22px 20px;
+    margin-bottom: 16px;
+  }
+
+  .field{ margin-bottom:18px; }
+  .field label{
+    display:block; font-size:12px; font-weight:700; color:var(--ink-soft);
+    letter-spacing:0.08em; margin-bottom:8px; text-transform:uppercase;
+  }
+  .field input[type=text]{
+    width:100%; padding:12px 13px; font-size:15px; font-family:'Noto Sans JP',sans-serif;
+    border:1px solid var(--line); border-radius:10px; background:#FAFAF8; color:var(--ink);
+    outline:none; transition: border-color .15s;
+  }
+  .field input[type=text]:focus{ border-color: var(--accent); }
+
+  .btn{
+    appearance:none; border:none; cursor:pointer;
+    font-family:'Zen Kaku Gothic New', sans-serif; font-weight:700; font-size:14px;
+    padding:13px 16px; border-radius:10px; width:100%;
+    transition: opacity .15s;
+  }
+  .btn:active{ opacity: 0.85; }
+  .btn-primary{
+    background: var(--accent);
+    color:#fff;
+  }
+  .btn-primary:disabled{ opacity:0.35; cursor:not-allowed; }
+  .btn-ghost{
+    background:transparent; color: var(--ink-soft); border:1px solid var(--line);
+  }
+
+  .setup-note{ font-size:12.5px; color:var(--ink-soft); line-height:1.7; margin: -6px 0 20px; }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; padding: 0 2px;
+  }
+  .who{ font-size:13px; color:var(--ink-soft); }
+  .who b{ color:var(--ink); font-weight:700; }
+  .gear{
+    width:34px;height:34px;border-radius:8px; border:1px solid var(--line); background:#fff;
+    display:flex;align-items:center;justify-content:center; cursor:pointer; flex-shrink:0;
+  }
+  .gear:active{ opacity:0.8; }
+
+  .datebar{
+    display:flex; gap:8px; align-items:stretch; margin-bottom:16px;
+  }
+  .datebar input[type=date]{
+    flex:1; padding:11px; font-family:'Noto Sans JP',sans-serif; font-weight:500; font-size:14px;
+    border:1px solid var(--line); border-radius:10px; background:#FAFAF8; color:var(--ink);
+  }
+  .ampm-toggle{
+    display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; flex-shrink:0;
+  }
+  .ampm-toggle button{
+    appearance:none; border:none; background:#FAFAF8; cursor:pointer;
+    padding: 0 18px; font-family:'Zen Kaku Gothic New',sans-serif; font-weight:700; font-size:13px;
+    color: var(--ink-soft);
+  }
+  .ampm-toggle button.active{ background: var(--accent); color:#fff; }
+  .ampm-toggle button + button{ border-left:1px solid var(--line); }
+
+  .section-title{
+    font-family:'Zen Kaku Gothic New', sans-serif; font-weight:700; font-size:15px;
+    color: var(--ink-soft);
+    margin: 0 0 12px;
+  }
+
+  .qrow{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding: 13px 0; border-bottom: 1px solid var(--line);
+  }
+  .qrow:last-child{ border-bottom:none; }
+  .qtext{ font-size:14px; line-height:1.5; flex:1; }
+  .qnum{ color: var(--ink-soft); font-size:12px; margin-right:6px; }
+
+  .toggle2{ display:flex; gap:6px; flex-shrink:0; }
+  .toggle2 button{
+    width:40px; height:40px; border-radius:8px; border:1px solid var(--line); background:#FAFAF8;
+    font-size:16px; font-weight:700; cursor:pointer; color: var(--ink-soft);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .toggle2 button.circle.sel{ background: var(--safe); border-color: var(--safe); color:#fff; }
+  .toggle2 button.cross.sel{ background: var(--alert); border-color: var(--alert); color:#fff; }
+
+  .save-area{ margin-top: 6px; }
+  .hint{ text-align:center; font-size:12px; color:var(--ink-soft); margin-top:10px; }
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(28,39,35,0.45); display:none;
+    align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    background:#fff; border-radius:14px; padding:22px; width:100%; max-width:380px;
+    border:1px solid var(--line);
+  }
+  .modal h2{ font-family:'Zen Kaku Gothic New',sans-serif; font-size:17px; margin:0 0 16px; }
+  .modal .row{ display:flex; gap:10px; margin-top:10px; }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color:#fff; padding:12px 20px; border-radius:30px; font-size:13px;
+    opacity:0; transition: all .25s; pointer-events:none; z-index:60; white-space:nowrap;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  #printable{ position:fixed; left:-9999px; top:0; width:700px; background:#fff; }
+
+  @media (max-width:380px){
+    .qrow{ flex-direction:column; align-items:flex-start; gap:10px; }
+    .toggle2{ align-self:flex-end; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="brand">
+    <h1>熱中症管理シート</h1>
+  </div>
+
+  <div id="setupScreen" class="card" style="display:none;">
+    <div class="field">
+      <label>部署名</label>
+      <input type="text" id="setupDept" placeholder="例）現場工事部">
+    </div>
+    <div class="field">
+      <label>氏名</label>
+      <input type="text" id="setupName" placeholder="例）山田 太郎">
+    </div>
+    <p class="setup-note">入力した内容はこの端末に保存され、次回から自動で読み込まれます。あとから設定アイコンで変更できます。</p>
+    <button class="btn btn-primary" id="setupBtn" disabled>決定してチェックシートを開く</button>
+  </div>
+
+  <div id="mainScreen" style="display:none;">
+    <div class="topbar">
+      <div class="who">部署：<b id="whoDept">-</b>　氏名：<b id="whoName">-</b></div>
+      <div class="gear" id="gearBtn" title="設定">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1C2723" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="datebar">
+        <input type="date" id="dateInput">
+        <div class="ampm-toggle">
+          <button type="button" id="btnAM" data-p="AM">AM</button>
+          <button type="button" id="btnPM" data-p="PM">PM</button>
+        </div>
+      </div>
+
+      <div class="section-title" id="sectionLabel">午前（AM）チェック</div>
+
+      <div id="qList"></div>
+
+      <div class="save-area">
+        <button class="btn btn-primary" id="saveBtn" disabled>保存してPDFをダウンロード</button>
+        <p class="hint">すべての項目に〇／×を入力すると保存できます</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <h2>ユーザー設定を変更</h2>
+    <div class="field">
+      <label>部署名</label>
+      <input type="text" id="editDept">
+    </div>
+    <div class="field" style="margin-bottom:0;">
+      <label>氏名</label>
+      <input type="text" id="editName">
+    </div>
+    <div class="row">
+      <button class="btn btn-ghost" id="cancelSettings">キャンセル</button>
+      <button class="btn btn-primary" id="saveSettings">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div id="printable"></div>
+
+<script>
+const QUESTIONS = {
+  AM: [
+    "昨晩はよく眠れましたか",
+    "疲れはたまっていませんか",
+    "気分、顔色はいいですか",
+    "二日酔いではないですか",
+    "朝食はしっかり食べられましたか",
+    "体調面での変化はないですか"
+  ],
+  PM: [
+    "昼食はしっかり食べられましたか",
+    "水分、塩分補給はしましたか",
+    "休憩は取りましたか",
+    "疲れはたまっていませんか",
+    "気分、顔色はいいですか",
+    "体調面での変化はありませんか"
+  ]
+};
+
+const USER_KEY = "heatSheet_user_v1";
+let currentPeriod = "AM";
+let answers = {};
+
+function getUser(){
+  try{ return JSON.parse(localStorage.getItem(USER_KEY)); }catch(e){ return null; }
+}
+function setUser(u){ localStorage.setItem(USER_KEY, JSON.stringify(u)); }
+function todayStr(){
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,"0"), day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+function init(){
+  const user = getUser();
+  if(!user || !user.dept || !user.name){
+    document.getElementById("setupScreen").style.display = "block";
+    document.getElementById("mainScreen").style.display = "none";
+  } else {
+    document.getElementById("setupScreen").style.display = "none";
+    document.getElementById("mainScreen").style.display = "block";
+    document.getElementById("whoDept").textContent = user.dept;
+    document.getElementById("whoName").textContent = user.name;
+    document.getElementById("dateInput").value = todayStr();
+    currentPeriod = new Date().getHours() < 12 ? "AM" : "PM";
+    renderPeriod();
+  }
+}
+
+const setupDept = document.getElementById("setupDept");
+const setupName = document.getElementById("setupName");
+const setupBtn = document.getElementById("setupBtn");
+function checkSetupValid(){
+  setupBtn.disabled = !(setupDept.value.trim() && setupName.value.trim());
+}
+setupDept.addEventListener("input", checkSetupValid);
+setupName.addEventListener("input", checkSetupValid);
+setupBtn.addEventListener("click", ()=>{
+  setUser({ dept: setupDept.value.trim(), name: setupName.value.trim() });
+  init();
+});
+
+const settingsOverlay = document.getElementById("settingsOverlay");
+document.getElementById("gearBtn").addEventListener("click", ()=>{
+  const u = getUser() || {dept:"",name:""};
+  document.getElementById("editDept").value = u.dept;
+  document.getElementById("editName").value = u.name;
+  settingsOverlay.classList.add("show");
+});
+document.getElementById("cancelSettings").addEventListener("click", ()=>{
+  settingsOverlay.classList.remove("show");
+});
+document.getElementById("saveSettings").addEventListener("click", ()=>{
+  const dept = document.getElementById("editDept").value.trim();
+  const name = document.getElementById("editName").value.trim();
+  if(!dept || !name){ showToast("部署名と氏名を入力してください"); return; }
+  setUser({dept, name});
+  document.getElementById("whoDept").textContent = dept;
+  document.getElementById("whoName").textContent = name;
+  settingsOverlay.classList.remove("show");
+  showToast("設定を更新しました");
+});
+
+document.getElementById("btnAM").addEventListener("click", ()=>{ currentPeriod="AM"; renderPeriod(); });
+document.getElementById("btnPM").addEventListener("click", ()=>{ currentPeriod="PM"; renderPeriod(); });
+
+function renderPeriod(){
+  document.getElementById("btnAM").classList.toggle("active", currentPeriod==="AM");
+  document.getElementById("btnPM").classList.toggle("active", currentPeriod==="PM");
+  document.getElementById("sectionLabel").textContent = currentPeriod==="AM" ? "午前（AM）チェック" : "午後（PM）チェック";
+
+  const qList = document.getElementById("qList");
+  qList.innerHTML = "";
+  QUESTIONS[currentPeriod].forEach((q, i)=>{
+    const key = currentPeriod + "_" + i;
+    const row = document.createElement("div");
+    row.className = "qrow";
+    row.innerHTML = `
+      <div class="qtext"><span class="qnum">Q${i+1}</span>${q}</div>
+      <div class="toggle2">
+        <button type="button" class="circle" data-key="${key}" data-val="circle">〇</button>
+        <button type="button" class="cross" data-key="${key}" data-val="cross">×</button>
+      </div>
+    `;
+    qList.appendChild(row);
+  });
+
+  qList.querySelectorAll("button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const key = btn.dataset.key, val = btn.dataset.val;
+      answers[key] = val;
+      updateToggleUI();
+      updateSaveState();
+    });
+  });
+  updateToggleUI();
+  updateSaveState();
+}
+
+function updateToggleUI(){
+  document.querySelectorAll("#qList .toggle2 button").forEach(btn=>{
+    const key = btn.dataset.key, val = btn.dataset.val;
+    btn.classList.toggle("sel", answers[key] === val);
+  });
+}
+
+function updateSaveState(){
+  const keys = QUESTIONS[currentPeriod].map((_,i)=>currentPeriod+"_"+i);
+  const answeredCount = keys.filter(k=>answers[k]).length;
+  document.getElementById("saveBtn").disabled = answeredCount < keys.length;
+}
+
+document.getElementById("saveBtn").addEventListener("click", async ()=>{
+  const user = getUser();
+  const date = document.getElementById("dateInput").value || todayStr();
+  const keys = QUESTIONS[currentPeriod].map((_,i)=>currentPeriod+"_"+i);
+  if(keys.some(k=>!answers[k])){
+    showToast("すべての項目に〇／×を入力してください");
+    return;
+  }
+
+  const saveBtn = document.getElementById("saveBtn");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "PDFを作成中...";
+
+  buildPrintable(user, date, currentPeriod);
+
+  try{
+    const target = document.getElementById("printable");
+    target.style.left = "0px"; target.style.top = "-9999px"; target.style.position="fixed";
+    const canvas = await html2canvas(target, {scale: 2, backgroundColor: "#ffffff"});
+    const imgData = canvas.toDataURL("image/png");
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:"portrait", unit:"pt", format:"a4" });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW - 60;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    let y = 30;
+    if(imgH > pageH - 60){
+      pdf.addImage(imgData, "PNG", 30, y, imgW, imgH);
+    } else {
+      pdf.addImage(imgData, "PNG", 30, y, imgW, imgH);
+    }
+    const fname = `熱中症管理シート_${date}_${currentPeriod}_${user.name}.pdf`;
+    pdf.save(fname);
+    showToast("PDFを保存しました");
+  } catch(err){
+    console.error(err);
+    showToast("PDF作成に失敗しました");
+  } finally{
+    document.getElementById("printable").style.left = "-9999px";
+    saveBtn.disabled = false;
+    saveBtn.textContent = "保存してPDFをダウンロード";
+  }
+});
+
+function buildPrintable(user, date, period){
+  const rows = QUESTIONS[period].map((q,i)=>{
+    const key = period+"_"+i;
+    const val = answers[key] === "circle" ? "〇" : "×";
+    return `
+      <tr>
+        <td style="padding:12px 10px;border-bottom:1px solid #E4E1D6;font-size:14px;color:#1C2723;width:70%;">${i+1}. ${q}</td>
+        <td style="padding:12px 10px;border-bottom:1px solid #E4E1D6;text-align:center;font-size:20px;font-weight:700;color:#1C2723;width:30%;">${val}</td>
+      </tr>`;
+  }).join("");
+
+  document.getElementById("printable").innerHTML = `
+    <div style="font-family:'Noto Sans JP',sans-serif;width:700px;padding:40px;background:#fff;color:#1C2723;">
+      <div style="margin-bottom:6px;">
+        <div style="font-size:22px;font-weight:900;">熱中症管理シート</div>
+      </div>
+      <div style="font-size:12px;color:#5C6B65;margin-bottom:24px;letter-spacing:1px;">HEAT ILLNESS SELF-CHECK RECORD</div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#5C6B65;width:120px;">日付</td>
+          <td style="padding:6px 0;font-size:15px;font-weight:700;">${date}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#5C6B65;">時間帯</td>
+          <td style="padding:6px 0;font-size:15px;font-weight:700;">${period === "AM" ? "午前（AM）" : "午後（PM）"}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#5C6B65;">部署名</td>
+          <td style="padding:6px 0;font-size:15px;font-weight:700;">${user.dept}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#5C6B65;">氏名</td>
+          <td style="padding:6px 0;font-size:15px;font-weight:700;">${user.name}</td>
+        </tr>
+      </table>
+
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 10px;border-bottom:2px solid #1C2723;font-size:12px;color:#5C6B65;">チェック項目</th>
+            <th style="text-align:center;padding:8px 10px;border-bottom:2px solid #1C2723;font-size:12px;color:#5C6B65;">回答</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div style="margin-top:30px;font-size:11px;color:#9aa39d;">作成日時：${new Date().toLocaleString('ja-JP')}</div>
+    </div>
+  `;
+}
+
+init();
+</script>
+</body>
+</html>
