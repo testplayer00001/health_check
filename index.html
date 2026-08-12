@@ -109,6 +109,7 @@
     color: var(--ink-soft);
   }
   .ampm-toggle button.active{ background: var(--accent); color:#fff; }
+  .format-btn.active{ background: var(--accent); color:#fff; }
   .ampm-toggle button + button{ border-left:1px solid var(--line); }
 
   .section-title{
@@ -137,6 +138,7 @@
   .save-area{ margin-top: 6px; }
   .hint{ text-align:center; font-size:12px; color:var(--ink-soft); margin-top:10px; }
 
+  /* modal */
   .overlay{
     position:fixed; inset:0; background:rgba(28,39,35,0.45); display:none;
     align-items:center; justify-content:center; padding:20px; z-index:50;
@@ -180,7 +182,11 @@
       <label>氏名</label>
       <input type="text" id="setupName" placeholder="例）山田 太郎">
     </div>
-    <p class="setup-note">入力した内容はこの端末に保存され、次回から自動で読み込まれます。あとから設定アイコンで変更できます。</p>
+    <div class="field">
+      <label>Teams Webhook URL（任意）</label>
+      <input type="text" id="setupWebhook" placeholder="https://xxxx.webhook.office.com/...">
+    </div>
+    <p class="setup-note">入力した内容はこの端末に保存され、次回から自動で読み込まれます。あとから設定アイコンで変更できます。Webhook URLを設定すると、保存時にチェック内容が指定のTeamsチャネルへ自動投稿されます（空欄でも利用できます）。</p>
     <button class="btn btn-primary" id="setupBtn" disabled>決定してチェックシートを開く</button>
   </div>
 
@@ -224,6 +230,19 @@
       <label>氏名</label>
       <input type="text" id="editName">
     </div>
+    <div class="field" style="margin-top:18px; margin-bottom:0;">
+      <label>Teams Webhook URL（任意）</label>
+      <input type="text" id="editWebhook" placeholder="https://xxxx.webhook.office.com/...">
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">設定すると、保存時にチェック内容が指定のTeamsチャネルへ自動投稿されます。空欄の場合はPDFのみ作成されます。</p>
+    </div>
+    <div class="field" style="margin-top:18px; margin-bottom:0;">
+      <label>Teams送信形式</label>
+      <div class="ampm-toggle" style="width:100%;">
+        <button type="button" class="format-btn" id="fmtMessage" data-fmt="message" style="flex:1;">メッセージ</button>
+        <button type="button" class="format-btn" id="fmtPdf" data-fmt="pdf" style="flex:1;">PDF（画像）</button>
+      </div>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">「メッセージ」は回答内容をテキストで送信します（確実に届きます）。「PDF（画像）」はシートを画像化して添付を試みますが、Teams Webhookの仕様上、内容が多いと送信に失敗する場合があります。</p>
+    </div>
     <div class="row">
       <button class="btn btn-ghost" id="cancelSettings">キャンセル</button>
       <button class="btn btn-primary" id="saveSettings">保存する</button>
@@ -251,7 +270,7 @@ const QUESTIONS = {
     "休憩は取りましたか",
     "疲れはたまっていませんか",
     "気分、顔色はいいですか",
-    "体調面での変化はありませんか"
+    "体調面での心配はありませんか"
   ]
 };
 
@@ -293,6 +312,7 @@ function init(){
 
 const setupDept = document.getElementById("setupDept");
 const setupName = document.getElementById("setupName");
+const setupWebhook = document.getElementById("setupWebhook");
 const setupBtn = document.getElementById("setupBtn");
 function checkSetupValid(){
   setupBtn.disabled = !(setupDept.value.trim() && setupName.value.trim());
@@ -300,15 +320,27 @@ function checkSetupValid(){
 setupDept.addEventListener("input", checkSetupValid);
 setupName.addEventListener("input", checkSetupValid);
 setupBtn.addEventListener("click", ()=>{
-  setUser({ dept: setupDept.value.trim(), name: setupName.value.trim() });
+  setUser({ dept: setupDept.value.trim(), name: setupName.value.trim(), webhook: setupWebhook.value.trim(), sendFormat: "message" });
   init();
 });
 
 const settingsOverlay = document.getElementById("settingsOverlay");
+let editSendFormat = "message";
+
+function setFormatButtons(fmt){
+  editSendFormat = fmt;
+  document.getElementById("fmtMessage").classList.toggle("active", fmt === "message");
+  document.getElementById("fmtPdf").classList.toggle("active", fmt === "pdf");
+}
+document.getElementById("fmtMessage").addEventListener("click", ()=> setFormatButtons("message"));
+document.getElementById("fmtPdf").addEventListener("click", ()=> setFormatButtons("pdf"));
+
 document.getElementById("gearBtn").addEventListener("click", ()=>{
-  const u = getUser() || {dept:"",name:""};
+  const u = getUser() || {dept:"",name:"",webhook:"",sendFormat:"message"};
   document.getElementById("editDept").value = u.dept;
   document.getElementById("editName").value = u.name;
+  document.getElementById("editWebhook").value = u.webhook || "";
+  setFormatButtons(u.sendFormat || "message");
   settingsOverlay.classList.add("show");
 });
 document.getElementById("cancelSettings").addEventListener("click", ()=>{
@@ -317,8 +349,9 @@ document.getElementById("cancelSettings").addEventListener("click", ()=>{
 document.getElementById("saveSettings").addEventListener("click", ()=>{
   const dept = document.getElementById("editDept").value.trim();
   const name = document.getElementById("editName").value.trim();
+  const webhook = document.getElementById("editWebhook").value.trim();
   if(!dept || !name){ showToast("部署名と氏名を入力してください"); return; }
-  setUser({dept, name});
+  setUser({dept, name, webhook, sendFormat: editSendFormat});
   document.getElementById("whoDept").textContent = dept;
   document.getElementById("whoName").textContent = name;
   settingsOverlay.classList.remove("show");
@@ -409,7 +442,13 @@ document.getElementById("saveBtn").addEventListener("click", async ()=>{
     }
     const fname = `熱中症管理シート_${date}_${currentPeriod}_${user.name}.pdf`;
     pdf.save(fname);
-    showToast("PDFを保存しました");
+
+    const teamsResult = await sendToTeams(user, date, currentPeriod, canvas);
+    if(teamsResult.sent){
+      showToast(teamsResult.hasAlert ? "PDFを保存し、Teamsに送信しました（⚠️ 要確認項目あり）" : "PDFを保存し、Teamsに送信しました");
+    } else {
+      showToast("PDFを保存しました（Teams未設定）");
+    }
   } catch(err){
     console.error(err);
     showToast("PDF作成に失敗しました");
@@ -419,6 +458,95 @@ document.getElementById("saveBtn").addEventListener("click", async ()=>{
     saveBtn.textContent = "保存してPDFをダウンロード";
   }
 });
+
+function sendToTeams(user, date, period, canvas){
+  return new Promise((resolve)=>{
+    if(!user.webhook){ resolve({sent:false, reason:"no-webhook"}); return; }
+
+    const alertQuestions = QUESTIONS[period].filter((q,i)=> answers[period+"_"+i] !== "circle");
+    const hasAlert = alertQuestions.length > 0;
+    const titlePrefix = hasAlert ? "⚠️ " : "✅ ";
+    const titleText = titlePrefix + `熱中症管理シート（${period === "AM" ? "午前" : "午後"}）`;
+
+    let payload;
+
+    if(user.sendFormat === "pdf" && canvas){
+      const small = document.createElement("canvas");
+      const maxW = 480;
+      const scale = Math.min(1, maxW / canvas.width);
+      small.width = canvas.width * scale;
+      small.height = canvas.height * scale;
+      small.getContext("2d").drawImage(canvas, 0, 0, small.width, small.height);
+      const imageDataUrl = small.toDataURL("image/jpeg", 0.55);
+
+      payload = {
+        "type": "message",
+        "attachments": [
+          {
+            "contentType": "application/vnd.microsoft.card.adaptive",
+            "content": {
+              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+              "type": "AdaptiveCard",
+              "version": "1.4",
+              "body": [
+                { "type": "TextBlock", "text": titleText, "weight": "bolder", "size": "medium", "wrap": true },
+                { "type": "TextBlock", "text": `${date}　${user.dept}　${user.name}`, "wrap": true, "isSubtle": true, "spacing": "small" },
+                { "type": "Image", "url": imageDataUrl, "size": "stretch" }
+              ]
+            }
+          }
+        ]
+      };
+    } else {
+      const facts = QUESTIONS[period].map((q,i)=>{
+        const key = period+"_"+i;
+        const isAlert = answers[key] !== "circle";
+        const val = isAlert ? "❌ ×（要確認）" : "✅ 〇";
+        return { name: `Q${i+1}. ${q}`, value: val };
+      });
+
+      const sections = [
+        {
+          "facts": [
+            { "name": "日付", "value": date },
+            { "name": "時間帯", "value": period === "AM" ? "午前（AM）" : "午後（PM）" },
+            { "name": "部署", "value": user.dept },
+            { "name": "氏名", "value": user.name }
+          ]
+        }
+      ];
+
+      if(hasAlert){
+        sections.push({
+          "activityTitle": "⚠️ 要確認項目があります",
+          "text": alertQuestions.map(q => `- ${q}`).join("\n")
+        });
+      }
+
+      sections.push({ "facts": facts });
+
+      payload = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "summary": "熱中症管理シート",
+        "themeColor": hasAlert ? "C64B3C" : "2E8B6E",
+        "title": titleText,
+        "sections": sections
+      };
+    }
+
+    fetch(user.webhook, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify(payload)
+    }).then(()=>{
+      resolve({sent:true, hasAlert});
+    }).catch(()=>{
+      resolve({sent:true, unverified:true, hasAlert});
+    });
+  });
+}
+
 
 function buildPrintable(user, date, period){
   const rows = QUESTIONS[period].map((q,i)=>{
@@ -436,7 +564,7 @@ function buildPrintable(user, date, period){
       <div style="margin-bottom:6px;">
         <div style="font-size:22px;font-weight:900;">熱中症管理シート</div>
       </div>
-      <div style="font-size:12px;color:#5C6B65;margin-bottom:24px;letter-spacing:1px;">HEAT ILLNESS SELF-CHECK RECORD</div>
+      <div style="font-size:12px;color:#5C6B65;margin-bottom:24px;letter-spacing:1px;">チェック記録</div>
 
       <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
         <tr>
