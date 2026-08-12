@@ -138,7 +138,6 @@
   .save-area{ margin-top: 6px; }
   .hint{ text-align:center; font-size:12px; color:var(--ink-soft); margin-top:10px; }
 
-  /* modal */
   .overlay{
     position:fixed; inset:0; background:rgba(28,39,35,0.45); display:none;
     align-items:center; justify-content:center; padding:20px; z-index:50;
@@ -233,19 +232,23 @@
     <div class="field" style="margin-top:18px; margin-bottom:0;">
       <label>Teams Webhook URL（任意）</label>
       <input type="text" id="editWebhook" placeholder="https://xxxx.webhook.office.com/...">
-      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">設定すると、保存時にチェック内容が指定のTeamsチャネルへ自動投稿されます。空欄の場合はPDFのみ作成されます。</p>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">設定すると、保存時にチェック内容をPower Automate Workflowsへ標準JSON形式で送信します。空欄の場合はPDFのみ作成されます。</p>
     </div>
     <div class="field" style="margin-top:18px; margin-bottom:0;">
       <label>Teams送信形式</label>
       <div class="ampm-toggle" style="width:100%;">
         <button type="button" class="format-btn" id="fmtMessage" data-fmt="message" style="flex:1;">メッセージ</button>
-        <button type="button" class="format-btn" id="fmtPdf" data-fmt="pdf" style="flex:1;">PDF（画像）</button>
+        <button type="button" class="format-btn" id="fmtPdf" data-fmt="pdf" style="flex:1; opacity:.4; cursor:not-allowed;" disabled>PDF（画像）</button>
       </div>
-      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">「メッセージ」は回答内容をテキストで送信します（確実に届きます）。「PDF（画像）」はシートを画像化して添付を試みますが、Teams Webhookの仕様上、内容が多いと送信に失敗する場合があります。</p>
+      <p style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6;">Power Automate の Workflows Webhookには標準JSON形式（{"text":"..."}）でチェック内容を送信します。</p>
     </div>
-    <div class="row">
-      <button class="btn btn-ghost" id="cancelSettings">キャンセル</button>
+    <div class="row" style="margin-top:18px;">
+      <button class="btn btn-ghost" id="testWebhook">テスト送信</button>
       <button class="btn btn-primary" id="saveSettings">保存する</button>
+    </div>
+    <p id="webhookTestStatus" style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 0; line-height:1.6; text-align:center;"></p>
+    <div style="margin-top:10px;">
+      <button class="btn btn-ghost" id="cancelSettings">キャンセル</button>
     </div>
   </div>
 </div>
@@ -340,18 +343,20 @@ document.getElementById("gearBtn").addEventListener("click", ()=>{
   document.getElementById("editDept").value = u.dept;
   document.getElementById("editName").value = u.name;
   document.getElementById("editWebhook").value = u.webhook || "";
-  setFormatButtons(u.sendFormat || "message");
+  setFormatButtons("message");
   settingsOverlay.classList.add("show");
 });
 document.getElementById("cancelSettings").addEventListener("click", ()=>{
   settingsOverlay.classList.remove("show");
 });
+document.getElementById("testWebhook").addEventListener("click", testWebhook);
+
 document.getElementById("saveSettings").addEventListener("click", ()=>{
   const dept = document.getElementById("editDept").value.trim();
   const name = document.getElementById("editName").value.trim();
   const webhook = document.getElementById("editWebhook").value.trim();
   if(!dept || !name){ showToast("部署名と氏名を入力してください"); return; }
-  setUser({dept, name, webhook, sendFormat: editSendFormat});
+  setUser({dept, name, webhook, sendFormat: "message"});
   document.getElementById("whoDept").textContent = dept;
   document.getElementById("whoName").textContent = name;
   settingsOverlay.classList.remove("show");
@@ -443,11 +448,15 @@ document.getElementById("saveBtn").addEventListener("click", async ()=>{
     const fname = `熱中症管理シート_${date}_${currentPeriod}_${user.name}.pdf`;
     pdf.save(fname);
 
-    const teamsResult = await sendToTeams(user, date, currentPeriod, canvas);
+    const teamsResult = await sendToTeams(user, date, currentPeriod);
     if(teamsResult.sent){
       showToast(teamsResult.hasAlert ? "PDFを保存し、Teamsに送信しました（⚠️ 要確認項目あり）" : "PDFを保存し、Teamsに送信しました");
-    } else {
+    } else if(teamsResult.reason === "no-webhook"){
       showToast("PDFを保存しました（Teams未設定）");
+    } else if(teamsResult.status){
+      showToast(`PDFを保存しました（Teams送信失敗：HTTP ${teamsResult.status}）`);
+    } else {
+      showToast("PDFを保存しました（Teams送信失敗：通信エラー）");
     }
   } catch(err){
     console.error(err);
@@ -459,94 +468,111 @@ document.getElementById("saveBtn").addEventListener("click", async ()=>{
   }
 });
 
-function sendToTeams(user, date, period, canvas){
-  return new Promise((resolve)=>{
-    if(!user.webhook){ resolve({sent:false, reason:"no-webhook"}); return; }
+async function postWebhook(webhook, message){
+  if(!webhook){
+    return { ok:false, reason:"no-webhook" };
+  }
 
-    const alertQuestions = QUESTIONS[period].filter((q,i)=> answers[period+"_"+i] !== "circle");
-    const hasAlert = alertQuestions.length > 0;
-    const titlePrefix = hasAlert ? "⚠️ " : "✅ ";
-    const titleText = titlePrefix + `熱中症管理シート（${period === "AM" ? "午前" : "午後"}）`;
-
-    let payload;
-
-    if(user.sendFormat === "pdf" && canvas){
-      const small = document.createElement("canvas");
-      const maxW = 480;
-      const scale = Math.min(1, maxW / canvas.width);
-      small.width = canvas.width * scale;
-      small.height = canvas.height * scale;
-      small.getContext("2d").drawImage(canvas, 0, 0, small.width, small.height);
-      const imageDataUrl = small.toDataURL("image/jpeg", 0.55);
-
-      payload = {
-        "type": "message",
-        "attachments": [
-          {
-            "contentType": "application/vnd.microsoft.card.adaptive",
-            "content": {
-              "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-              "type": "AdaptiveCard",
-              "version": "1.4",
-              "body": [
-                { "type": "TextBlock", "text": titleText, "weight": "bolder", "size": "medium", "wrap": true },
-                { "type": "TextBlock", "text": `${date}　${user.dept}　${user.name}`, "wrap": true, "isSubtle": true, "spacing": "small" },
-                { "type": "Image", "url": imageDataUrl, "size": "stretch" }
-              ]
-            }
-          }
-        ]
-      };
-    } else {
-      const facts = QUESTIONS[period].map((q,i)=>{
-        const key = period+"_"+i;
-        const isAlert = answers[key] !== "circle";
-        const val = isAlert ? "❌ ×（要確認）" : "✅ 〇";
-        return { name: `Q${i+1}. ${q}`, value: val };
-      });
-
-      const sections = [
-        {
-          "facts": [
-            { "name": "日付", "value": date },
-            { "name": "時間帯", "value": period === "AM" ? "午前（AM）" : "午後（PM）" },
-            { "name": "部署", "value": user.dept },
-            { "name": "氏名", "value": user.name }
-          ]
-        }
-      ];
-
-      if(hasAlert){
-        sections.push({
-          "activityTitle": "⚠️ 要確認項目があります",
-          "text": alertQuestions.map(q => `- ${q}`).join("\n")
-        });
-      }
-
-      sections.push({ "facts": facts });
-
-      payload = {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "summary": "熱中症管理シート",
-        "themeColor": hasAlert ? "C64B3C" : "2E8B6E",
-        "title": titleText,
-        "sections": sections
-      };
-    }
-
-    fetch(user.webhook, {
+  try{
+    const response = await fetch(webhook, {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=UTF-8" },
-      body: JSON.stringify(payload)
-    }).then(()=>{
-      resolve({sent:true, hasAlert});
-    }).catch(()=>{
-      resolve({sent:true, unverified:true, hasAlert});
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: message })
     });
-  });
+
+    const responseText = await response.text().catch(()=> "");
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: responseText
+    };
+  }catch(err){
+    console.error("Webhook error:", err);
+    return { ok:false, reason:"network", error:err };
+  }
 }
 
+function buildTeamsMessage(user, date, period){
+  const alertQuestions = QUESTIONS[period].filter((q,i) => answers[period+"_"+i] !== "circle");
+  const hasAlert = alertQuestions.length > 0;
+  const titlePrefix = hasAlert ? "⚠️" : "✅";
+  const periodText = period === "AM" ? "午前（AM）" : "午後（PM）";
+
+  const results = QUESTIONS[period].map((q,i)=>{
+    const val = answers[period+"_"+i] === "circle" ? "〇" : "×";
+    return `Q${i+1}. ${q}：${val}`;
+  }).join("\n");
+
+  const alertText = hasAlert
+    ? `\n\n⚠️ 要確認項目:\n${alertQuestions.map(q => `・${q}`).join("\n")}`
+    : "";
+
+  return `${titlePrefix} 熱中症管理シート（${periodText}）
+
+日付：${date}
+部署：${user.dept}
+氏名：${user.name}
+
+${results}${alertText}`;
+}
+
+async function sendToTeams(user, date, period){
+  if(!user.webhook){
+    return { sent:false, reason:"no-webhook" };
+  }
+
+  const alertQuestions = QUESTIONS[period].filter((q,i) => answers[period+"_"+i] !== "circle");
+  const hasAlert = alertQuestions.length > 0;
+  const result = await postWebhook(user.webhook, buildTeamsMessage(user, date, period));
+
+  if(result.ok){
+    return { sent:true, hasAlert, status:result.status };
+  }
+
+  return {
+    sent:false,
+    hasAlert,
+    status:result.status,
+    reason:result.reason || "http-error",
+    body:result.body
+  };
+}
+
+async function testWebhook(){
+  const webhook = document.getElementById("editWebhook").value.trim();
+  const statusEl = document.getElementById("webhookTestStatus");
+  const testBtn = document.getElementById("testWebhook");
+
+  if(!webhook){
+    statusEl.textContent = "Webhook URLを入力してください。";
+    return;
+  }
+
+  testBtn.disabled = true;
+  testBtn.textContent = "送信中...";
+  statusEl.textContent = "";
+
+  const message = `✅ 熱中症管理シート Webhookテスト
+
+このメッセージが届けば、Power Automate Workflows のWebhook連携は正常です。
+送信日時：${new Date().toLocaleString("ja-JP")}`;
+
+  const result = await postWebhook(webhook, message);
+
+  if(result.ok){
+    statusEl.textContent = `テスト送信成功（HTTP ${result.status}）`;
+    showToast("Webhookのテスト送信に成功しました");
+  }else if(result.status){
+    statusEl.textContent = `テスト送信失敗（HTTP ${result.status}）`;
+    showToast(`Webhook送信に失敗しました（HTTP ${result.status}）`);
+  }else{
+    statusEl.textContent = "テスト送信失敗（通信エラー）";
+    showToast("Webhookへの接続に失敗しました");
+  }
+
+  testBtn.disabled = false;
+  testBtn.textContent = "テスト送信";
+}
 
 function buildPrintable(user, date, period){
   const rows = QUESTIONS[period].map((q,i)=>{
